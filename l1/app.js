@@ -13,8 +13,20 @@ const tokenStatusElement = document.getElementById('token-status');
 const usedTokenElement = document.getElementById('used-token');
 const reviewCountElement = document.getElementById('review-count');
 
+// CORS Proxy URLs (несколько вариантов на случай, если один не работает)
+const CORS_PROXIES = [
+    'https://api.allorigins.win/raw?url=',  // Primary
+    'https://corsproxy.io/?',               // Backup 1
+    'https://api.codetabs.com/v1/proxy?quest=', // Backup 2
+    'https://cors-anywhere.herokuapp.com/'  // Backup 3
+];
+
+let currentProxyIndex = 0;
+
 // Initialize the app
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('App initialized on:', window.location.hostname);
+    
     // Load the TSV file
     loadReviews();
     
@@ -23,67 +35,62 @@ document.addEventListener('DOMContentLoaded', function() {
     apiTokenInput.addEventListener('input', saveApiToken);
     apiTokenInput.addEventListener('change', updateTokenDisplay);
     
-    // Load saved API token if exists
-    const savedToken = localStorage.getItem('hfApiToken');
-    if (savedToken) {
-        apiTokenInput.value = savedToken;
-        apiToken = savedToken;
+    // Try to load saved API token
+    try {
+        const savedToken = localStorage.getItem('hfApiToken');
+        if (savedToken) {
+            apiTokenInput.value = savedToken;
+            apiToken = savedToken;
+        }
+    } catch (e) {
+        console.warn('Cannot access localStorage:', e.message);
+        showError('Local storage blocked. API token will not be saved.');
     }
     
-    // Initial token display update
     updateTokenDisplay();
-    
-    // Update review count display
-    if (reviewCountElement) {
-        // Initial value will be updated when reviews are loaded
-        reviewCountElement.textContent = '0';
-    }
 });
 
-// Load and parse the TSV file using Papa Parse
+// Load and parse the TSV file
 function loadReviews() {
-    fetch('reviews_test.tsv')
+    // Use proxy for TSV file too if needed
+    const tsvUrl = 'https://raw.githubusercontent.com/kzinovyeva/kzinovyeva.github.io/main/reviews_test.tsv';
+    
+    fetchWithProxy(tsvUrl)
         .then(response => {
             if (!response.ok) throw new Error('Failed to load TSV file');
             return response.text();
         })
         .then(tsvData => {
-            Papa.parse(tsvData, {
-                header: true,
-                delimiter: '\t',
-                complete: (results) => {
-                    reviews = results.data
-                        .filter(row => row && row.text)
-                        .map(row => row.text.trim())
-                        .filter(text => text && text !== '');
-                    
-                    console.log('Loaded', reviews.length, 'reviews');
-                    
-                    // Update review count display
-                    if (reviewCountElement) {
-                        reviewCountElement.textContent = reviews.length;
-                    }
-                    
-                    // Load fake data if TSV is empty
-                    if (reviews.length === 0) {
+            if (typeof Papa !== 'undefined') {
+                Papa.parse(tsvData, {
+                    header: true,
+                    delimiter: '\t',
+                    complete: (results) => {
+                        reviews = results.data
+                            .filter(row => row && row.text)
+                            .map(row => row.text.trim())
+                            .filter(text => text && text !== '');
+                        
+                        console.log('Loaded', reviews.length, 'reviews');
+                        updateReviewCount();
+                    },
+                    error: (error) => {
+                        console.error('TSV parse error:', error);
                         loadFakeData();
                     }
-                },
-                error: (error) => {
-                    console.error('TSV parse error:', error);
-                    showError('Failed to parse TSV file: ' + error.message);
-                    loadFakeData();
-                }
-            });
+                });
+            } else {
+                console.warn('PapaParse not loaded, using fake data');
+                loadFakeData();
+            }
         })
         .catch(error => {
             console.error('TSV load error:', error);
-            showError('Failed to load TSV file: ' + error.message);
             loadFakeData();
         });
 }
 
-// Load fake reviews data if TSV fails
+// Load fake reviews data
 function loadFakeData() {
     reviews = [
         "I absolutely love this product! It has changed my life for the better.",
@@ -98,211 +105,180 @@ function loadFakeData() {
         "Simple and effective. Does exactly what it promises."
     ];
     
-    console.log('Loaded fake data:', reviews.length, 'reviews');
-    
+    console.log('Loaded', reviews.length, 'demo reviews');
+    updateReviewCount(' (demo data)');
+}
+
+function updateReviewCount(suffix = '') {
     if (reviewCountElement) {
-        reviewCountElement.textContent = reviews.length + ' (demo data)';
+        reviewCountElement.textContent = reviews.length + suffix;
     }
 }
 
-// Save API token to localStorage
+// Save API token (with error handling)
 function saveApiToken() {
     apiToken = apiTokenInput.value.trim();
-    if (apiToken) {
-        localStorage.setItem('hfApiToken', apiToken);
-    } else {
-        localStorage.removeItem('hfApiToken');
+    try {
+        if (apiToken) {
+            localStorage.setItem('hfApiToken', apiToken);
+        } else {
+            localStorage.removeItem('hfApiToken');
+        }
+    } catch (e) {
+        console.warn('Cannot save to localStorage:', e.message);
     }
     updateTokenDisplay();
 }
 
-// Update token display information
+// Update token display
 function updateTokenDisplay() {
     const token = apiTokenInput.value.trim();
-    
-    if (!token) {
-        if (tokenStatusElement) {
-            tokenStatusElement.textContent = 'Token not set (using public access)';
-            tokenStatusElement.className = 'token-status no-token';
-        }
-        if (usedTokenElement) {
-            usedTokenElement.textContent = 'Using: public access (rate limited)';
-            usedTokenElement.className = 'used-token no-token';
-        }
-        return;
-    }
-    
-    // Mask token for security
-    const maskedToken = maskToken(token);
+    const masked = token ? maskToken(token) : 'none';
     
     if (tokenStatusElement) {
-        tokenStatusElement.textContent = `Token set (${token.length} chars)`;
-        tokenStatusElement.className = 'token-status has-token';
-    }
-    if (usedTokenElement) {
-        usedTokenElement.textContent = `Using: ${maskedToken}`;
-        usedTokenElement.className = 'used-token has-token';
+        tokenStatusElement.textContent = token ? `Token set (${masked})` : 'No token (using proxy)';
+        tokenStatusElement.className = token ? 'token-status has-token' : 'token-status no-token';
     }
     
-    console.log('Using token:', maskedToken);
+    if (usedTokenElement) {
+        usedTokenElement.textContent = `Using: ${masked}`;
+    }
+    
+    console.log('Current token:', masked);
 }
 
-// Mask token for display
 function maskToken(token) {
-    if (token.length <= 8) {
-        return '***' + token.slice(-4);
+    if (token.length <= 8) return '••••';
+    return token.slice(0, 4) + '••••' + token.slice(-4);
+}
+
+// Fetch with CORS proxy
+async function fetchWithProxy(url, options = {}) {
+    const proxyUrl = CORS_PROXIES[currentProxyIndex] + encodeURIComponent(url);
+    
+    console.log(`Using proxy ${currentProxyIndex + 1}/${CORS_PROXIES.length} for:`, url);
+    
+    const proxyOptions = {
+        ...options,
+        headers: {
+            ...options.headers,
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    };
+    
+    try {
+        const response = await fetch(proxyUrl, proxyOptions);
+        
+        if (response.ok) {
+            return response;
+        }
+        
+        throw new Error(`Proxy ${currentProxyIndex + 1} failed: ${response.status}`);
+        
+    } catch (error) {
+        console.warn(`Proxy ${currentProxyIndex + 1} error:`, error.message);
+        
+        // Try next proxy
+        currentProxyIndex = (currentProxyIndex + 1) % CORS_PROXIES.length;
+        
+        if (currentProxyIndex === 0) {
+            throw new Error('All proxies failed. Please try again later.');
+        }
+        
+        console.log(`Trying next proxy (${currentProxyIndex + 1})...`);
+        return fetchWithProxy(url, options);
     }
-    return token.slice(0, 4) + '***' + token.slice(-4);
 }
 
 // Analyze a random review
-function analyzeRandomReview() {
+async function analyzeRandomReview() {
     hideError();
-    updateTokenDisplay();
     
     if (reviews.length === 0) {
-        showError('No reviews available. Please try again later.');
+        showError('Loading reviews... Please try again.');
         return;
     }
     
     const selectedReview = reviews[Math.floor(Math.random() * reviews.length)];
-    
-    // Display the review
     reviewText.textContent = selectedReview;
     
-    // Show loading state
-    loadingElement.style.display = 'block';
-    analyzeBtn.disabled = true;
-    sentimentResult.innerHTML = '';  // Reset previous result
-    sentimentResult.className = 'sentiment-result';  // Reset classes
-    
-    // Update UI to show which review was selected
+    // Update pick number
     const pickNumberElement = document.querySelector('.pick-number');
     if (pickNumberElement) {
         pickNumberElement.textContent = `#${reviews.indexOf(selectedReview) + 1}`;
     }
     
-    // Call Hugging Face API
-    analyzeSentiment(selectedReview)
-        .then(result => displaySentiment(result))
-        .catch(error => {
-            console.error('Error:', error);
-            
-            // More specific error messages
-            let errorMessage = 'Analysis failed: ';
-            
-            if (error.message.includes('Failed to fetch') || error.name === 'TypeError') {
-                errorMessage += 'Network error or CORS issue. ';
-                errorMessage += 'Try using a different browser or check console for CORS errors.';
-                
-                // Try alternative API endpoint
-                console.log('Trying alternative API endpoint...');
-                analyzeWithAlternativeAPI(selectedReview)
-                    .then(result => displaySentiment(result))
-                    .catch(altError => {
-                        console.error('Alternative API also failed:', altError);
-                        showError(errorMessage);
-                    });
-            } else if (error.message.includes('401') || error.message.includes('Unauthorized')) {
-                errorMessage += 'Invalid or expired API token. Please check your Hugging Face token.';
-                showError(errorMessage);
-            } else if (error.message.includes('429')) {
-                errorMessage += 'Rate limit exceeded. Please wait or use your own API token.';
-                showError(errorMessage);
-            } else if (error.message.includes('503') || error.message.includes('Model')) {
-                errorMessage += 'Model is loading or unavailable. Please try again in 30 seconds.';
-                showError(errorMessage);
-            } else {
-                errorMessage += error.message;
-                showError(errorMessage);
-            }
-        })
-        .finally(() => {
-            loadingElement.style.display = 'none';
-            analyzeBtn.disabled = false;
-        });
+    // Show loading
+    loadingElement.style.display = 'block';
+    analyzeBtn.disabled = true;
+    sentimentResult.innerHTML = '';
+    sentimentResult.className = 'sentiment-result';
+    
+    try {
+        const result = await analyzeSentiment(selectedReview);
+        displaySentiment(result);
+    } catch (error) {
+        console.error('Analysis error:', error);
+        
+        let errorMessage = 'Analysis failed. ';
+        if (error.message.includes('proxy')) {
+            errorMessage += 'CORS proxy issue. ';
+        } else if (error.message.includes('token')) {
+            errorMessage += 'Invalid API token. ';
+        }
+        errorMessage += 'Try again or check console for details.';
+        
+        showError(errorMessage);
+        sentimentResult.innerHTML = `<div class="error">${error.message}</div>`;
+    } finally {
+        loadingElement.style.display = 'none';
+        analyzeBtn.disabled = false;
+    }
 }
 
-// Main Hugging Face API call with CORS handling
+// Call Hugging Face API through proxy
 async function analyzeSentiment(text) {
     const apiUrl = 'https://api-inference.huggingface.co/models/siebert/sentiment-roberta-large-english';
     
-    console.log('Making API request to:', apiUrl);
-    console.log('Using token:', apiToken ? maskToken(apiToken) : 'none (public access)');
+    console.log('Analyzing:', text.substring(0, 50) + '...');
+    console.log('API URL:', apiUrl);
+    console.log('Using token?', !!apiToken);
     
     const headers = {
         'Content-Type': 'application/json'
     };
     
-    // Add Authorization header only if token is provided
-    if (apiToken && apiToken.trim() !== '') {
+    if (apiToken) {
         headers['Authorization'] = `Bearer ${apiToken}`;
     }
     
-    const requestOptions = {
+    const requestBody = JSON.stringify({
+        inputs: text,
+        options: {
+            wait_for_model: true,
+            use_cache: true
+        }
+    });
+    
+    const response = await fetchWithProxy(apiUrl, {
         method: 'POST',
         headers: headers,
-        body: JSON.stringify({ inputs: text }),
-        // Add mode and credentials for CORS
-        mode: 'cors',
-        credentials: 'omit'
-    };
-    
-    // Add timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    requestOptions.signal = controller.signal;
-    
-    try {
-        const response = await fetch(apiUrl, requestOptions);
-        clearTimeout(timeoutId);
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error('API Error Response:', {
-                status: response.status,
-                statusText: response.statusText,
-                body: errorText
-            });
-            
-            throw new Error(`API error ${response.status}: ${response.statusText}`);
-        }
-        
-        const result = await response.json();
-        console.log('API Success:', result);
-        return result;
-        
-    } catch (error) {
-        clearTimeout(timeoutId);
-        
-        if (error.name === 'AbortError') {
-            throw new Error('Request timeout (30s). The model might be loading.');
-        }
-        
-        throw error;
-    }
-}
-
-// Alternative API endpoint (proxy approach)
-async function analyzeWithAlternativeAPI(text) {
-    // Try a different approach - use a CORS proxy or alternative endpoint
-    const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-    const apiUrl = 'https://api-inference.huggingface.co/models/siebert/sentiment-roberta-large-english';
-    
-    console.log('Trying with CORS proxy...');
-    
-    const response = await fetch(proxyUrl + apiUrl, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': apiToken ? `Bearer ${apiToken}` : ''
-        },
-        body: JSON.stringify({ inputs: text }),
-        mode: 'cors'
+        body: requestBody
     });
     
     if (!response.ok) {
-        throw new Error(`Proxy API error: ${response.status}`);
+        const errorText = await response.text();
+        console.error('API Error:', response.status, errorText);
+        
+        if (response.status === 401) {
+            throw new Error('Invalid API token');
+        } else if (response.status === 429) {
+            throw new Error('Rate limit exceeded. Please wait.');
+        } else if (response.status === 503) {
+            throw new Error('Model is loading. Try again in 30 seconds.');
+        } else {
+            throw new Error(`API error: ${response.status}`);
+        }
     }
     
     return await response.json();
@@ -310,26 +286,17 @@ async function analyzeWithAlternativeAPI(text) {
 
 // Display sentiment result
 function displaySentiment(result) {
-    // Default to neutral if we can't parse the result
     let sentiment = 'neutral';
     let score = 0.5;
     let label = 'NEUTRAL';
     
-    // Parse the API response
     try {
-        if (Array.isArray(result) && result.length > 0) {
-            let sentimentData;
+        if (result && Array.isArray(result) && result[0]) {
+            const data = Array.isArray(result[0]) ? result[0][0] : result[0];
             
-            // Handle different response formats
-            if (Array.isArray(result[0])) {
-                sentimentData = result[0][0];
-            } else {
-                sentimentData = result[0];
-            }
-            
-            if (sentimentData && sentimentData.label) {
-                label = sentimentData.label.toUpperCase();
-                score = sentimentData.score || 0.5;
+            if (data && data.label) {
+                label = data.label.toUpperCase();
+                score = data.score || 0.5;
                 
                 if (label.includes('POSITIVE') && score > 0.5) {
                     sentiment = 'positive';
@@ -338,66 +305,48 @@ function displaySentiment(result) {
                 }
             }
         }
-    } catch (error) {
-        console.error('Error parsing API response:', error, result);
-        label = 'ERROR';
-        score = 0;
+    } catch (e) {
+        console.warn('Error parsing result:', e, result);
     }
     
-    // Update UI
     sentimentResult.classList.add(sentiment);
-    
-    const scoreDisplay = score > 0 ? `${(score * 100).toFixed(1)}%` : '—';
-    
     sentimentResult.innerHTML = `
         <div class="sentiment-header">
-            <i class="fas ${getSentimentIcon(sentiment)} icon"></i>
+            <i class="fas ${getSentimentIcon(sentiment)}"></i>
             <span class="sentiment-label">${sentiment.toUpperCase()}</span>
         </div>
         <div class="sentiment-details">
-            <div class="detail-item">
-                <span class="detail-label">Label:</span>
-                <span class="detail-value">${label}</span>
-            </div>
-            <div class="detail-item">
-                <span class="detail-label">Score:</span>
-                <span class="detail-value">${scoreDisplay}</span>
-            </div>
+            <div>Label: <strong>${label}</strong></div>
+            <div>Score: <strong>${(score * 100).toFixed(1)}%</strong></div>
         </div>
-        <div class="api-info">
-            <small>Analyzed with Hugging Face API</small>
+        <div class="proxy-info">
+            <small>Via CORS proxy (${currentProxyIndex + 1}/${CORS_PROXIES.length})</small>
         </div>
     `;
 }
 
-// Get appropriate icon for sentiment
 function getSentimentIcon(sentiment) {
     switch(sentiment) {
-        case 'positive':
-            return 'fa-thumbs-up';
-        case 'negative':
-            return 'fa-thumbs-down';
-        default:
-            return 'fa-meh';
+        case 'positive': return 'fa-smile';
+        case 'negative': return 'fa-frown';
+        default: return 'fa-meh';
     }
 }
 
-// Show error message
 function showError(message) {
     if (errorElement) {
         errorElement.textContent = message;
         errorElement.style.display = 'block';
-        
-        // Auto-hide error after 10 seconds
-        setTimeout(() => {
-            hideError();
-        }, 10000);
     }
 }
 
-// Hide error message
 function hideError() {
     if (errorElement) {
         errorElement.style.display = 'none';
     }
 }
+
+// Add this to check environment
+console.log('Hostname:', window.location.hostname);
+console.log('Protocol:', window.location.protocol);
+console.log('User Agent:', navigator.userAgent);
