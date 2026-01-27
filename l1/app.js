@@ -1,63 +1,61 @@
-// Global variables
+// Simplified JavaScript code that works with your HTML
+
+// DOM elements
 let reviews = [];
 let apiToken = '';
 
-// DOM elements
-const analyzeBtn = document.getElementById('analyze-btn');
-const reviewText = document.getElementById('review-text');
-const sentimentResult = document.getElementById('sentiment-result');
-const loadingElement = document.querySelector('.loading');
-const errorElement = document.getElementById('error-message');
-const apiTokenInput = document.getElementById('api-token');
-const tokenStatusElement = document.getElementById('token-status');
-const usedTokenElement = document.getElementById('used-token');
-const reviewCountElement = document.getElementById('review-count');
-
-// CORS Proxy URLs (несколько вариантов на случай, если один не работает)
-const CORS_PROXIES = [
-    'https://api.allorigins.win/raw?url=',  // Primary
-    'https://corsproxy.io/?',               // Backup 1
-    'https://api.codetabs.com/v1/proxy?quest=', // Backup 2
-    'https://cors-anywhere.herokuapp.com/'  // Backup 3
-];
-
-let currentProxyIndex = 0;
-
 // Initialize the app
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('App initialized on:', window.location.hostname);
+    console.log('App initialized');
     
-    // Load the TSV file
+    // Load reviews
     loadReviews();
     
-    // Set up event listeners
-    analyzeBtn.addEventListener('click', analyzeRandomReview);
-    apiTokenInput.addEventListener('input', saveApiToken);
-    apiTokenInput.addEventListener('change', updateTokenDisplay);
+    // Setup button click
+    document.getElementById('analyze-btn').addEventListener('click', analyzeRandomReview);
     
-    // Try to load saved API token
-    try {
-        const savedToken = localStorage.getItem('hfApiToken');
-        if (savedToken) {
-            apiTokenInput.value = savedToken;
-            apiToken = savedToken;
-        }
-    } catch (e) {
-        console.warn('Cannot access localStorage:', e.message);
-        showError('Local storage blocked. API token will not be saved.');
+    // Setup token input
+    const apiTokenInput = document.getElementById('api-token');
+    apiTokenInput.addEventListener('input', function() {
+        apiToken = this.value.trim();
+        updateTokenDisplay();
+    });
+    
+    // Load saved token
+    const savedToken = localStorage.getItem('hfApiToken');
+    if (savedToken) {
+        apiTokenInput.value = savedToken;
+        apiToken = savedToken;
     }
     
     updateTokenDisplay();
 });
 
-// Load and parse the TSV file
-function loadReviews() {
-    // Use proxy for TSV file too if needed
-    const tsvUrl = 'https://raw.githubusercontent.com/kzinovyeva/kzinovyeva.github.io/main/reviews_test.tsv';
+// Update token display
+function updateTokenDisplay() {
+    const tokenStatus = document.getElementById('token-status');
+    const usedToken = document.getElementById('used-token');
     
-    fetchWithProxy(tsvUrl)
+    if (apiToken) {
+        const maskedToken = apiToken.substring(0, 6) + '...' + apiToken.substring(apiToken.length - 4);
+        tokenStatus.textContent = 'Token: ' + maskedToken;
+        tokenStatus.className = 'token-status has-token';
+        usedToken.textContent = 'Using: your token';
+    } else {
+        tokenStatus.textContent = 'No token (using public access)';
+        tokenStatus.className = 'token-status no-token';
+        usedToken.textContent = 'Using: public access (rate limited)';
+    }
+}
+
+// Load reviews from TSV or use demo data
+function loadReviews() {
+    console.log('Loading reviews...');
+    
+    // Try to load from TSV file
+    fetch('reviews_test.tsv')
         .then(response => {
-            if (!response.ok) throw new Error('Failed to load TSV file');
+            if (!response.ok) throw new Error('TSV not found');
             return response.text();
         })
         .then(tsvData => {
@@ -69,29 +67,28 @@ function loadReviews() {
                         reviews = results.data
                             .filter(row => row && row.text)
                             .map(row => row.text.trim())
-                            .filter(text => text && text !== '');
+                            .filter(text => text && text.length > 0);
                         
-                        console.log('Loaded', reviews.length, 'reviews');
-                        updateReviewCount();
+                        console.log('Loaded ' + reviews.length + ' reviews from TSV');
+                        updateReviewCount(reviews.length);
                     },
                     error: (error) => {
                         console.error('TSV parse error:', error);
-                        loadFakeData();
+                        loadDemoReviews();
                     }
                 });
             } else {
-                console.warn('PapaParse not loaded, using fake data');
-                loadFakeData();
+                loadDemoReviews();
             }
         })
         .catch(error => {
-            console.error('TSV load error:', error);
-            loadFakeData();
+            console.log('TSV not available, loading demo reviews:', error);
+            loadDemoReviews();
         });
 }
 
-// Load fake reviews data
-function loadFakeData() {
+// Load demo reviews
+function loadDemoReviews() {
     reviews = [
         "I absolutely love this product! It has changed my life for the better.",
         "The worst purchase I've ever made. Complete waste of money.",
@@ -105,191 +102,112 @@ function loadFakeData() {
         "Simple and effective. Does exactly what it promises."
     ];
     
-    console.log('Loaded', reviews.length, 'demo reviews');
-    updateReviewCount(' (demo data)');
+    console.log('Loaded ' + reviews.length + ' demo reviews');
+    updateReviewCount(reviews.length + ' (demo)');
 }
 
-function updateReviewCount(suffix = '') {
+// Update review count display
+function updateReviewCount(count) {
+    const reviewCountElement = document.getElementById('review-count');
     if (reviewCountElement) {
-        reviewCountElement.textContent = reviews.length + suffix;
+        reviewCountElement.textContent = count;
     }
 }
 
-// Save API token (with error handling)
-function saveApiToken() {
-    apiToken = apiTokenInput.value.trim();
-    try {
-        if (apiToken) {
-            localStorage.setItem('hfApiToken', apiToken);
-        } else {
-            localStorage.removeItem('hfApiToken');
-        }
-    } catch (e) {
-        console.warn('Cannot save to localStorage:', e.message);
-    }
-    updateTokenDisplay();
-}
-
-// Update token display
-function updateTokenDisplay() {
-    const token = apiTokenInput.value.trim();
-    const masked = token ? maskToken(token) : 'none';
-    
-    if (tokenStatusElement) {
-        tokenStatusElement.textContent = token ? `Token set (${masked})` : 'No token (using proxy)';
-        tokenStatusElement.className = token ? 'token-status has-token' : 'token-status no-token';
-    }
-    
-    if (usedTokenElement) {
-        usedTokenElement.textContent = `Using: ${masked}`;
-    }
-    
-    console.log('Current token:', masked);
-}
-
-function maskToken(token) {
-    if (token.length <= 8) return '••••';
-    return token.slice(0, 4) + '••••' + token.slice(-4);
-}
-
-// Fetch with CORS proxy
-async function fetchWithProxy(url, options = {}) {
-    const proxyUrl = CORS_PROXIES[currentProxyIndex] + encodeURIComponent(url);
-    
-    console.log(`Using proxy ${currentProxyIndex + 1}/${CORS_PROXIES.length} for:`, url);
-    
-    const proxyOptions = {
-        ...options,
-        headers: {
-            ...options.headers,
-            'X-Requested-With': 'XMLHttpRequest'
-        }
-    };
-    
-    try {
-        const response = await fetch(proxyUrl, proxyOptions);
-        
-        if (response.ok) {
-            return response;
-        }
-        
-        throw new Error(`Proxy ${currentProxyIndex + 1} failed: ${response.status}`);
-        
-    } catch (error) {
-        console.warn(`Proxy ${currentProxyIndex + 1} error:`, error.message);
-        
-        // Try next proxy
-        currentProxyIndex = (currentProxyIndex + 1) % CORS_PROXIES.length;
-        
-        if (currentProxyIndex === 0) {
-            throw new Error('All proxies failed. Please try again later.');
-        }
-        
-        console.log(`Trying next proxy (${currentProxyIndex + 1})...`);
-        return fetchWithProxy(url, options);
-    }
-}
-
-// Analyze a random review
+// Analyze random review
 async function analyzeRandomReview() {
+    console.log('Analyzing random review...');
+    
+    // Hide any previous error
     hideError();
     
+    // Check if we have reviews
     if (reviews.length === 0) {
-        showError('Loading reviews... Please try again.');
+        showError('No reviews loaded. Please refresh the page.');
         return;
     }
     
-    const selectedReview = reviews[Math.floor(Math.random() * reviews.length)];
-    reviewText.textContent = selectedReview;
+    // Select random review
+    const randomIndex = Math.floor(Math.random() * reviews.length);
+    const selectedReview = reviews[randomIndex];
+    
+    // Update UI
+    document.getElementById('review-text').textContent = selectedReview;
     
     // Update pick number
     const pickNumberElement = document.querySelector('.pick-number');
     if (pickNumberElement) {
-        pickNumberElement.textContent = `#${reviews.indexOf(selectedReview) + 1}`;
+        pickNumberElement.textContent = '#' + (randomIndex + 1);
     }
     
     // Show loading
+    const loadingElement = document.querySelector('.loading');
+    const analyzeBtn = document.getElementById('analyze-btn');
+    const sentimentResult = document.getElementById('sentiment-result');
+    
     loadingElement.style.display = 'block';
     analyzeBtn.disabled = true;
-    sentimentResult.innerHTML = '';
+    sentimentResult.innerHTML = '<i class="fas fa-spinner fa-spin icon"></i><span>Analyzing...</span>';
     sentimentResult.className = 'sentiment-result';
     
     try {
-        const result = await analyzeSentiment(selectedReview);
-        displaySentiment(result);
+        // Call Hugging Face API
+        const result = await callHuggingFaceAPI(selectedReview);
+        displaySentimentResult(result);
     } catch (error) {
         console.error('Analysis error:', error);
-        
-        let errorMessage = 'Analysis failed. ';
-        if (error.message.includes('proxy')) {
-            errorMessage += 'CORS proxy issue. ';
-        } else if (error.message.includes('token')) {
-            errorMessage += 'Invalid API token. ';
-        }
-        errorMessage += 'Try again or check console for details.';
-        
-        showError(errorMessage);
-        sentimentResult.innerHTML = `<div class="error">${error.message}</div>`;
+        showError('Failed to analyze: ' + error.message);
+        sentimentResult.innerHTML = '<i class="fas fa-exclamation-triangle icon"></i><span>Analysis failed</span>';
     } finally {
         loadingElement.style.display = 'none';
         analyzeBtn.disabled = false;
     }
 }
 
-// Call Hugging Face API through proxy
-async function analyzeSentiment(text) {
-    const apiUrl = 'https://api-inference.huggingface.co/models/siebert/sentiment-roberta-large-english';
+// Call Hugging Face API with CORS proxy
+async function callHuggingFaceAPI(text) {
+    console.log('Calling Hugging Face API...');
     
-    console.log('Analyzing:', text.substring(0, 50) + '...');
-    console.log('API URL:', apiUrl);
-    console.log('Using token?', !!apiToken);
+    const apiUrl = 'https://api-inference.huggingface.co/models/siebert/sentiment-roberta-large-english';
+    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(apiUrl);
     
     const headers = {
         'Content-Type': 'application/json'
     };
     
     if (apiToken) {
-        headers['Authorization'] = `Bearer ${apiToken}`;
+        headers['Authorization'] = 'Bearer ' + apiToken;
     }
     
-    const requestBody = JSON.stringify({
-        inputs: text,
-        options: {
-            wait_for_model: true,
-            use_cache: true
-        }
-    });
-    
-    const response = await fetchWithProxy(apiUrl, {
+    const response = await fetch(proxyUrl, {
         method: 'POST',
         headers: headers,
-        body: requestBody
+        body: JSON.stringify({
+            inputs: text,
+            options: {
+                wait_for_model: true
+            }
+        })
     });
     
     if (!response.ok) {
-        const errorText = await response.text();
-        console.error('API Error:', response.status, errorText);
-        
-        if (response.status === 401) {
-            throw new Error('Invalid API token');
-        } else if (response.status === 429) {
-            throw new Error('Rate limit exceeded. Please wait.');
-        } else if (response.status === 503) {
-            throw new Error('Model is loading. Try again in 30 seconds.');
-        } else {
-            throw new Error(`API error: ${response.status}`);
-        }
+        throw new Error('API error: ' + response.status);
     }
     
     return await response.json();
 }
 
 // Display sentiment result
-function displaySentiment(result) {
-    let sentiment = 'neutral';
-    let score = 0.5;
-    let label = 'NEUTRAL';
+function displaySentimentResult(result) {
+    const sentimentResult = document.getElementById('sentiment-result');
     
+    // Default values
+    let sentiment = 'neutral';
+    let label = 'NEUTRAL';
+    let score = 0.5;
+    let icon = 'fa-meh';
+    
+    // Parse API response
     try {
         if (result && Array.isArray(result) && result[0]) {
             const data = Array.isArray(result[0]) ? result[0][0] : result[0];
@@ -300,53 +218,37 @@ function displaySentiment(result) {
                 
                 if (label.includes('POSITIVE') && score > 0.5) {
                     sentiment = 'positive';
+                    icon = 'fa-smile';
                 } else if (label.includes('NEGATIVE') && score > 0.5) {
                     sentiment = 'negative';
+                    icon = 'fa-frown';
                 }
             }
         }
-    } catch (e) {
-        console.warn('Error parsing result:', e, result);
+    } catch (error) {
+        console.warn('Error parsing result:', error);
     }
     
-    sentimentResult.classList.add(sentiment);
+    // Update UI
+    sentimentResult.className = 'sentiment-result ' + sentiment;
     sentimentResult.innerHTML = `
-        <div class="sentiment-header">
-            <i class="fas ${getSentimentIcon(sentiment)}"></i>
-            <span class="sentiment-label">${sentiment.toUpperCase()}</span>
-        </div>
-        <div class="sentiment-details">
-            <div>Label: <strong>${label}</strong></div>
-            <div>Score: <strong>${(score * 100).toFixed(1)}%</strong></div>
-        </div>
-        <div class="proxy-info">
-            <small>Via CORS proxy (${currentProxyIndex + 1}/${CORS_PROXIES.length})</small>
-        </div>
+        <i class="fas ${icon} icon"></i>
+        <span>${sentiment.toUpperCase()} (${(score * 100).toFixed(1)}% confidence)</span>
     `;
 }
 
-function getSentimentIcon(sentiment) {
-    switch(sentiment) {
-        case 'positive': return 'fa-smile';
-        case 'negative': return 'fa-frown';
-        default: return 'fa-meh';
-    }
-}
-
+// Show error message
 function showError(message) {
-    if (errorElement) {
-        errorElement.textContent = message;
-        errorElement.style.display = 'block';
-    }
+    const errorElement = document.getElementById('error-message');
+    errorElement.textContent = message;
+    errorElement.style.display = 'block';
+    
+    // Auto-hide after 5 seconds
+    setTimeout(hideError, 5000);
 }
 
+// Hide error message
 function hideError() {
-    if (errorElement) {
-        errorElement.style.display = 'none';
-    }
+    const errorElement = document.getElementById('error-message');
+    errorElement.style.display = 'none';
 }
-
-// Add this to check environment
-console.log('Hostname:', window.location.hostname);
-console.log('Protocol:', window.location.protocol);
-console.log('User Agent:', navigator.userAgent);
