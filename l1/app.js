@@ -1,18 +1,21 @@
 import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6/dist/transformers.min.js";
 
 /**
- * Requirements implemented:
- * - Static client-side app with 2 files: index.html + app.js
- * - fetch("reviews_test.tsv") + Papa Parse (header:true, delimiter:"\t")
- * - Transformers.js pipeline("text-classification", Xenova/...sst-2...) in browser
- * - Analyze random review, show label+confidence+icon, loading+error states
- * - UI settings: enter HF token and Apps Script URL through interface
- * - Log every model run to Google Sheets (HW 2) in the exact Apps Script format:
- *   ts, Review, Sentiment, Meta  (x-www-form-urlencoded; goes into e.parameter)
+ * Fully client-side sentiment demo with ALWAYS-ON logging:
+ * - fetch reviews_test.tsv
+ * - parse TSV via Papa Parse (header:true, delimiter:"\t")
+ * - run Transformers.js pipeline in-browser
+ * - analyze random review and render label/score/icon
+ * - ALWAYS log each run to Google Sheets via Apps Script Web App doPost receiver
+ *
+ * IMPORTANT:
+ * - Logging is always enabled; user must provide Apps Script Web App URL in UI (stored in localStorage).
+ * - Log payload matches your Apps Script doPost(e) expectation:
+ *   x-www-form-urlencoded fields: ts, Review, Sentiment, Meta
  */
 
 // ==============================
-// Config (static inputs)
+// Config
 // ==============================
 const TSV_PATH = "reviews_test.tsv";
 const TEXT_COLUMN = "text";
@@ -22,7 +25,6 @@ const MODEL_ID = "Xenova/distilbert-base-uncased-finetuned-sst-2-english";
 const LS_KEYS = {
   appsScriptUrl: "hw2_appsScriptUrl",
   hfToken: "hw2_hfToken",
-  enableLogging: "hw2_enableLogging",
 };
 
 // ==============================
@@ -31,7 +33,7 @@ const LS_KEYS = {
 let reviews = [];
 let sentimentPipe = null;
 
-// Cached DOM
+// DOM cache
 const el = {};
 
 // ==============================
@@ -67,7 +69,7 @@ function clearError() {
 function setLoading(on, msg) {
   el.loadingRow.style.display = on ? "inline-flex" : "none";
   el.loadingText.textContent = msg || (on ? "Loading…" : "");
-  el.analyzeBtn.disabled = on || !sentimentPipe || reviews.length === 0;
+  el.analyzeBtn.disabled = on || !sentimentPipe || reviews.length === 0 || !isLoggingConfigured();
 }
 
 function setCounts(n) {
@@ -79,29 +81,20 @@ function setLogStatus(text) {
 }
 
 // ==============================
-// Settings (UI <-> localStorage)
+// Settings
 // ==============================
 function loadSettingsFromStorage() {
-  const appsScriptUrl = localStorage.getItem(LS_KEYS.appsScriptUrl) || "";
-  const hfToken = localStorage.getItem(LS_KEYS.hfToken) || "";
-  const enableLoggingRaw = localStorage.getItem(LS_KEYS.enableLogging);
-  const enableLogging = enableLoggingRaw === "true";
-
-  el.appsScriptUrlInput.value = appsScriptUrl;
-  el.hfTokenInput.value = hfToken;
-  el.enableLoggingChk.checked = enableLogging;
-
+  el.appsScriptUrlInput.value = (localStorage.getItem(LS_KEYS.appsScriptUrl) || "").trim();
+  el.hfTokenInput.value = (localStorage.getItem(LS_KEYS.hfToken) || "").trim();
   updateLogStatusUI();
 }
 
 function saveSettingsToStorage() {
   const appsScriptUrl = (el.appsScriptUrlInput.value || "").trim();
   const hfToken = (el.hfTokenInput.value || "").trim();
-  const enableLogging = !!el.enableLoggingChk.checked;
 
   localStorage.setItem(LS_KEYS.appsScriptUrl, appsScriptUrl);
   localStorage.setItem(LS_KEYS.hfToken, hfToken);
-  localStorage.setItem(LS_KEYS.enableLogging, String(enableLogging));
 
   updateLogStatusUI();
 }
@@ -110,21 +103,21 @@ function getSettings() {
   return {
     appsScriptUrl: (localStorage.getItem(LS_KEYS.appsScriptUrl) || "").trim(),
     hfToken: (localStorage.getItem(LS_KEYS.hfToken) || "").trim(),
-    enableLogging: localStorage.getItem(LS_KEYS.enableLogging) === "true",
   };
 }
 
+function isLoggingConfigured() {
+  const { appsScriptUrl } = getSettings();
+  return !!appsScriptUrl;
+}
+
 function updateLogStatusUI() {
-  const { appsScriptUrl, enableLogging } = getSettings();
-  if (!enableLogging) {
-    setLogStatus("Logging: off");
-    return;
-  }
+  const { appsScriptUrl } = getSettings();
   if (!appsScriptUrl) {
-    setLogStatus("Logging: on (missing URL)");
+    setLogStatus("Logging: not configured (enter URL)");
     return;
   }
-  setLogStatus("Logging: on");
+  setLogStatus("Logging: ON");
 }
 
 // ==============================
@@ -207,18 +200,17 @@ async function initModel() {
   const { hfToken } = getSettings();
 
   try {
-    // Try with token if provided (for private repos). If unsupported by library, may throw.
+    // If token provided, attempt to use it (private repo access). If unsupported, will throw and we retry.
     if (hfToken) {
       sentimentPipe = await pipeline("text-classification", MODEL_ID, { token: hfToken });
     } else {
       sentimentPipe = await pipeline("text-classification", MODEL_ID);
     }
-
     setStatus("Sentiment model ready.");
   } catch (err) {
     console.error("Model load error:", err);
 
-    // Fallback: if token attempt failed, retry without token (useful if token option is unsupported)
+    // Retry without token if token attempt failed (helps if 'token' option unsupported)
     if (hfToken) {
       try {
         console.warn("Retrying model load without token…");
@@ -256,7 +248,6 @@ function pickRandom(arr) {
 }
 
 function normalizeOutput(output) {
-  // expected: [{ label: "POSITIVE", score: 0.99 }]
   if (!Array.isArray(output) || !output.length || typeof output[0] !== "object") {
     throw new Error("Invalid inference output (expected array of objects).");
   }
@@ -268,10 +259,6 @@ function normalizeOutput(output) {
 }
 
 function sentimentBucket(label, score) {
-  // Requirements:
-  // Positive if label is "POSITIVE" and score > 0.5.
-  // Negative if label is "NEGATIVE" and score > 0.5.
-  // Neutral otherwise.
   if (label === "POSITIVE" && score > 0.5) return "positive";
   if (label === "NEGATIVE" && score > 0.5) return "negative";
   return "neutral";
@@ -296,7 +283,6 @@ function renderResult(label, score, bucket) {
 
   el.resultMeta.textContent = `Model: ${MODEL_ID}`;
 
-  // icon mapping
   el.resultIcon.innerHTML = "";
   const i = document.createElement("i");
   if (bucket === "positive") i.className = "fa-solid fa-thumbs-up";
@@ -307,6 +293,14 @@ function renderResult(label, score, bucket) {
 
 async function analyzeOnce() {
   clearError();
+
+  if (!isLoggingConfigured()) {
+    showError(
+      "Logging is always ON, but Apps Script URL is not configured.\n" +
+      "Enter your Apps Script Web App URL (ends with /exec) and click “Save settings”."
+    );
+    return;
+  }
 
   if (!reviews.length) {
     showError("No reviews loaded. Check reviews_test.tsv and the 'text' column.");
@@ -328,7 +322,7 @@ async function analyzeOnce() {
 
     renderResult(label, score, bucket);
 
-    // Log every successful run in the exact expected format
+    // ALWAYS log, in exact Apps Script doPost(e) format
     await logRunToGoogleSheet({
       review,
       sentiment: `${label} (${percent(score).toFixed(1)}%)`,
@@ -359,8 +353,8 @@ async function analyzeOnce() {
 
 // ==============================
 // Google Sheets logging (Apps Script doPost receiver)
-// EXACT FORMAT required by your script:
-// { ts, Review, Sentiment, Meta } as x-www-form-urlencoded
+// EXACT FORMAT required:
+// x-www-form-urlencoded fields: ts, Review, Sentiment, Meta
 // ==============================
 function buildMeta(extra = {}) {
   const meta = {
@@ -378,24 +372,22 @@ function buildMeta(extra = {}) {
 }
 
 async function logRunToGoogleSheet({ review, sentiment, meta }) {
-  const { appsScriptUrl, enableLogging } = getSettings();
+  const { appsScriptUrl } = getSettings();
   updateLogStatusUI();
 
-  if (!enableLogging) return;
   if (!appsScriptUrl) {
-    console.warn("Logging enabled but Apps Script URL is missing.");
-    return;
+    // This shouldn't happen because analyzeOnce guards it, but keep it safe.
+    throw new Error("Apps Script URL is missing (logging is required).");
   }
 
-  // Your Apps Script expects e.parameter keys: ts, Review, Sentiment, Meta
   const body = new URLSearchParams();
   body.set("ts", String(Date.now()));
   body.set("Review", review || "");
   body.set("Sentiment", sentiment || "");
   body.set("Meta", meta || "");
 
-  // no-cors prevents browser from blocking if Apps Script doesn't set CORS headers.
-  // You won't be able to read the response, but the row should append.
+  // Use no-cors so the browser sends the request even if Apps Script lacks CORS headers.
+  // We cannot read the response in no-cors mode, but the row should append.
   await fetch(appsScriptUrl, {
     method: "POST",
     mode: "no-cors",
@@ -422,7 +414,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     "bucketTag",
     "appsScriptUrlInput",
     "hfTokenInput",
-    "enableLoggingChk",
     "saveSettingsBtn",
     "reloadModelBtn",
     "logStatusText",
@@ -443,7 +434,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   el.appsScriptUrlInput = $("appsScriptUrlInput");
   el.hfTokenInput = $("hfTokenInput");
-  el.enableLoggingChk = $("enableLoggingChk");
   el.saveSettingsBtn = $("saveSettingsBtn");
   el.reloadModelBtn = $("reloadModelBtn");
   el.logStatusText = $("logStatusText");
@@ -462,19 +452,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     clearError();
     saveSettingsToStorage();
     setStatus("Settings saved.");
+    // reevaluate button availability
+    el.analyzeBtn.disabled = !sentimentPipe || reviews.length === 0 || !isLoggingConfigured();
   });
 
   el.reloadModelBtn.addEventListener("click", async () => {
     await initModel();
-    el.analyzeBtn.disabled = !sentimentPipe || reviews.length === 0;
-    if (sentimentPipe && reviews.length) {
+    el.analyzeBtn.disabled = !sentimentPipe || reviews.length === 0 || !isLoggingConfigured();
+    if (sentimentPipe && reviews.length && isLoggingConfigured()) {
       setStatus(`Ready. Loaded ${reviews.length} reviews. Click “Analyze random review”.`);
     }
-  });
-
-  el.enableLoggingChk.addEventListener("change", () => {
-    saveSettingsToStorage();
-    updateLogStatusUI();
   });
 
   el.analyzeBtn.addEventListener("click", () => {
@@ -489,14 +476,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadReviews();
   await initModel();
 
-  // Final state
+  // Final state: enable button only when TSV+model ready AND logging configured (always-on requirement)
   setLoading(false, "");
-  el.analyzeBtn.disabled = !sentimentPipe || reviews.length === 0;
+  el.analyzeBtn.disabled = !sentimentPipe || reviews.length === 0 || !isLoggingConfigured();
 
-  if (sentimentPipe && reviews.length) {
+  if (!isLoggingConfigured()) {
+    setStatus("Enter Apps Script Web App URL and click “Save settings” (logging is required).");
+  } else if (sentimentPipe && reviews.length) {
     setStatus(`Ready. Loaded ${reviews.length} reviews. Click “Analyze random review”.`);
   } else if (reviews.length && !sentimentPipe) {
-    setStatus("TSV loaded, but model not ready. Check settings and click “Reload model”.");
+    setStatus("TSV loaded, but model not ready. Click “Reload model”.");
   }
 
   updateLogStatusUI();
