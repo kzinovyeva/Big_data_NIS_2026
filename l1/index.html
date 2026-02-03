@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Random Review Sentiment Analyzer (Client-side)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Random Review Sentiment Analyzer</title>
 
   <!-- Font Awesome for sentiment icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -12,225 +12,126 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
   <style>
-    :root {
-      --bg: #0b1220;
-      --card: #121a2b;
-      --text: #e8eefc;
-      --muted: #a8b3d6;
-      --border: rgba(255,255,255,0.10);
-      --shadow: 0 10px 30px rgba(0,0,0,0.35);
+    :root{
+      --bg:#0b1220;
+      --card:#121a2b;
+      --text:#e8eefc;
+      --muted:#a8b3d6;
+      --border:rgba(255,255,255,.12);
+      --shadow:0 10px 30px rgba(0,0,0,.35);
 
-      --pos: #1f8f52;
-      --neg: #c62828;
-      --neu: #6b7a90;
+      --pos:#1f8f52;
+      --neg:#c62828;
+      --neu:#6b7a90;
 
-      --btn: #2b66ff;
-      --btnHover: #1f55e6;
-      --btnDisabled: #2b66ff55;
+      --btn:#2b66ff;
+      --btnHover:#1f55e6;
+      --btnDisabled:#2b66ff55;
     }
 
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-      background: radial-gradient(1200px 800px at 15% 10%, #18254a 0%, var(--bg) 55%);
-      color: var(--text);
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;
+      background:radial-gradient(1200px 800px at 15% 10%, #18254a 0%, var(--bg) 55%);
+      color:var(--text);
     }
+    .container{max-width:920px;margin:48px auto;padding:0 16px 56px}
+    h1{margin:0 0 10px;font-size:28px;letter-spacing:.2px}
+    .subtitle{margin:0 0 22px;color:var(--muted);line-height:1.5}
+    .card{
+      background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      border:1px solid var(--border);
+      border-radius:16px;
+      box-shadow:var(--shadow);
+      padding:18px;
+    }
+    .row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:14px}
+    button{
+      border:0;
+      padding:12px 14px;
+      border-radius:12px;
+      background:var(--btn);
+      color:#fff;
+      cursor:pointer;
+      font-weight:700;
+      letter-spacing:.2px;
+      transition:transform .05s ease, background .15s ease;
+    }
+    button:hover{background:var(--btnHover)}
+    button:active{transform:translateY(1px)}
+    button:disabled{background:var(--btnDisabled);cursor:not-allowed}
+    .pill{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:8px 10px;border-radius:999px;
+      border:1px solid var(--border);
+      color:var(--muted);font-size:13px;line-height:1;
+    }
+    .status{color:var(--muted);font-size:13px;line-height:1.4;min-height:18px;margin-top:6px}
+    .error{
+      display:none;margin-top:12px;padding:12px;border-radius:12px;
+      border:1px solid rgba(255,77,77,.35);
+      background:rgba(198,40,40,.15);
+      color:#ffd4d4;white-space:pre-wrap;line-height:1.4;
+    }
+    .section-title{
+      margin:16px 0 8px;font-size:13px;color:var(--muted);
+      text-transform:uppercase;letter-spacing:.4px
+    }
+    .review-box{
+      border:1px solid var(--border);
+      border-radius:14px;
+      padding:14px;
+      background:rgba(0,0,0,.15);
+      min-height:110px;
+      white-space:pre-wrap;
+      line-height:1.5;
+    }
+    .result{
+      display:flex;align-items:center;gap:12px;
+      margin-top:12px;padding:14px;border-radius:14px;
+      border:1px solid var(--border);
+      background:rgba(0,0,0,.12);
+    }
+    .icon{font-size:26px;width:34px;display:inline-flex;align-items:center;justify-content:center}
+    .label{font-size:16px;font-weight:800;letter-spacing:.2px}
+    .meta{color:var(--muted);font-size:13px;margin-top:2px}
+    .tag{
+      display:inline-flex;align-items:center;border-radius:999px;
+      padding:6px 10px;font-size:12px;font-weight:800;
+      letter-spacing:.3px;border:1px solid rgba(255,255,255,.12);
+      margin-left:8px;
+    }
+    .tag.positive{background:rgba(31,143,82,.2);color:#bff2d5}
+    .tag.negative{background:rgba(198,40,40,.2);color:#ffd4d4}
+    .tag.neutral {background:rgba(107,122,144,.22);color:#d6deea}
 
-    .container {
-      max-width: 900px;
-      margin: 48px auto;
-      padding: 0 16px 48px;
+    .loading{
+      display:none;align-items:center;gap:10px;color:var(--muted);font-size:13px;
     }
-
-    h1 {
-      font-size: 28px;
-      margin: 0 0 12px;
-      letter-spacing: 0.2px;
+    .spinner{
+      width:16px;height:16px;border:2px solid rgba(255,255,255,.22);
+      border-top-color:rgba(255,255,255,.85);
+      border-radius:50%;
+      animation:spin .9s linear infinite;
     }
-
-    .subtitle {
-      margin: 0 0 22px;
-      color: var(--muted);
-      line-height: 1.5;
-    }
-
-    .card {
-      background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      box-shadow: var(--shadow);
-      padding: 18px;
-    }
-
-    .row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 12px;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 14px;
-    }
-
-    button {
-      appearance: none;
-      border: 0;
-      padding: 12px 14px;
-      border-radius: 12px;
-      background: var(--btn);
-      color: white;
-      cursor: pointer;
-      font-weight: 600;
-      letter-spacing: 0.2px;
-      transition: transform 0.05s ease, background 0.15s ease;
-    }
-    button:hover { background: var(--btnHover); }
-    button:active { transform: translateY(1px); }
-    button:disabled {
-      background: var(--btnDisabled);
-      cursor: not-allowed;
-    }
-
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1;
-    }
-
-    .status {
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.4;
-      margin-top: 6px;
-      min-height: 18px;
-    }
-
-    .error {
-      display: none;
-      margin-top: 12px;
-      padding: 12px 12px;
-      border-radius: 12px;
-      border: 1px solid rgba(255, 77, 77, 0.35);
-      background: rgba(198, 40, 40, 0.15);
-      color: #ffd4d4;
-      line-height: 1.4;
-      white-space: pre-wrap;
-    }
-
-    .section-title {
-      margin: 16px 0 8px;
-      font-size: 14px;
-      color: var(--muted);
-      letter-spacing: 0.4px;
-      text-transform: uppercase;
-    }
-
-    .review-box {
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 14px;
-      background: rgba(0,0,0,0.15);
-      min-height: 110px;
-      white-space: pre-wrap;
-      line-height: 1.5;
-      color: var(--text);
-    }
-
-    .result {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      margin-top: 12px;
-      padding: 14px;
-      border-radius: 14px;
-      border: 1px solid var(--border);
-      background: rgba(0,0,0,0.12);
-    }
-
-    .result .icon {
-      font-size: 26px;
-      width: 34px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .result .text {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-    }
-
-    .result .label {
-      font-size: 16px;
-      font-weight: 700;
-      letter-spacing: 0.2px;
-    }
-
-    .result .meta {
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .tag {
-      display: inline-flex;
-      align-items: center;
-      border-radius: 999px;
-      padding: 6px 10px;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.3px;
-      border: 1px solid rgba(255,255,255,0.12);
-      margin-left: 8px;
-    }
-    .tag.positive { background: rgba(31, 143, 82, 0.20); color: #bff2d5; }
-    .tag.negative { background: rgba(198, 40, 40, 0.20); color: #ffd4d4; }
-    .tag.neutral  { background: rgba(107, 122, 144, 0.22); color: #d6deea; }
-
-    .loading {
-      display: none;
-      align-items: center;
-      gap: 10px;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .spinner {
-      width: 16px;
-      height: 16px;
-      border: 2px solid rgba(255,255,255,0.22);
-      border-top-color: rgba(255,255,255,0.85);
-      border-radius: 50%;
-      animation: spin 0.9s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    .footer-note {
-      margin-top: 12px;
-      font-size: 12px;
-      color: var(--muted);
-      opacity: 0.95;
-    }
+    @keyframes spin{to{transform:rotate(360deg)}}
+    code{color:#cfe0ff}
+    .hint{margin-top:12px;color:var(--muted);font-size:12px;line-height:1.45}
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Random Review Sentiment Analyzer</h1>
     <p class="subtitle">
-      Fully client-side demo: loads <code>reviews_test.tsv</code>, picks a random review, and runs sentiment in your browser using Transformers.js.
+      Loads <code>reviews_test.tsv</code>, picks a random review, and runs sentiment locally in your browser using Transformers.js.
     </p>
 
     <div class="card">
       <div class="row">
         <button id="analyzeBtn" disabled>Analyze random review</button>
 
-        <div class="pill" id="countsPill" title="Loaded reviews count">
+        <div class="pill" title="Loaded reviews count">
           <i class="fa-solid fa-database"></i>
           <span id="countsText">Reviews: 0</span>
         </div>
@@ -245,23 +146,24 @@
       <div class="error" id="errorBox" role="alert"></div>
 
       <div class="section-title">Selected review</div>
-      <div class="review-box" id="reviewBox">Click “Analyze random review” once the model and TSV are loaded.</div>
+      <div class="review-box" id="reviewBox">Waiting for TSV + model…</div>
 
       <div class="section-title">Result</div>
       <div class="result" id="resultBox">
         <div class="icon" id="resultIcon" aria-hidden="true">
           <i class="fa-regular fa-circle-question"></i>
         </div>
-        <div class="text">
-          <div class="label" id="resultLabel">
-            — <span class="tag neutral" id="bucketTag">NEUTRAL</span>
+        <div>
+          <div class="label">
+            <span id="resultLabel">—</span>
+            <span class="tag neutral" id="bucketTag">NEUTRAL</span>
           </div>
           <div class="meta" id="resultMeta">No analysis yet.</div>
         </div>
       </div>
 
-      <div class="footer-note">
-        Note: This app runs inference locally in your browser (no Hugging Face Inference API). Each model run can be logged to Google Sheets via an Apps Script Web App endpoint (configured in <code>app.js</code>).
+      <div class="hint">
+        Logging: set your Apps Script Web App URL in <code>app.js</code> (GOOGLE_APPS_SCRIPT_URL). TSV must have a column named <code>text</code>.
       </div>
     </div>
   </div>
