@@ -27,6 +27,8 @@
       --btn:#2b66ff;
       --btnHover:#1f55e6;
       --btnDisabled:#2b66ff55;
+
+      --inputBg: rgba(0,0,0,.18);
     }
 
     *{box-sizing:border-box}
@@ -36,7 +38,7 @@
       background:radial-gradient(1200px 800px at 15% 10%, #18254a 0%, var(--bg) 55%);
       color:var(--text);
     }
-    .container{max-width:920px;margin:48px auto;padding:0 16px 56px}
+    .container{max-width:980px;margin:48px auto;padding:0 16px 56px}
     h1{margin:0 0 10px;font-size:28px;letter-spacing:.2px}
     .subtitle{margin:0 0 22px;color:var(--muted);line-height:1.5}
     .card{
@@ -46,7 +48,25 @@
       box-shadow:var(--shadow);
       padding:18px;
     }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:14px;
+    }
+    @media (max-width: 860px){
+      .grid{grid-template-columns: 1fr;}
+    }
+
+    .panel{
+      border:1px solid var(--border);
+      border-radius:14px;
+      padding:14px;
+      background: rgba(0,0,0,.12);
+    }
+
     .row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:14px}
+    .row-left{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
     button{
       border:0;
       padding:12px 14px;
@@ -54,9 +74,10 @@
       background:var(--btn);
       color:#fff;
       cursor:pointer;
-      font-weight:700;
+      font-weight:800;
       letter-spacing:.2px;
       transition:transform .05s ease, background .15s ease;
+      white-space:nowrap;
     }
     button:hover{background:var(--btnHover)}
     button:active{transform:translateY(1px)}
@@ -66,7 +87,9 @@
       padding:8px 10px;border-radius:999px;
       border:1px solid var(--border);
       color:var(--muted);font-size:13px;line-height:1;
+      white-space:nowrap;
     }
+
     .status{color:var(--muted);font-size:13px;line-height:1.4;min-height:18px;margin-top:6px}
     .error{
       display:none;margin-top:12px;padding:12px;border-radius:12px;
@@ -74,6 +97,7 @@
       background:rgba(198,40,40,.15);
       color:#ffd4d4;white-space:pre-wrap;line-height:1.4;
     }
+
     .section-title{
       margin:16px 0 8px;font-size:13px;color:var(--muted);
       text-transform:uppercase;letter-spacing:.4px
@@ -87,6 +111,7 @@
       white-space:pre-wrap;
       line-height:1.5;
     }
+
     .result{
       display:flex;align-items:center;gap:12px;
       margin-top:12px;padding:14px;border-radius:14px;
@@ -94,13 +119,14 @@
       background:rgba(0,0,0,.12);
     }
     .icon{font-size:26px;width:34px;display:inline-flex;align-items:center;justify-content:center}
-    .label{font-size:16px;font-weight:800;letter-spacing:.2px}
+    .label{font-size:16px;font-weight:900;letter-spacing:.2px}
     .meta{color:var(--muted);font-size:13px;margin-top:2px}
     .tag{
       display:inline-flex;align-items:center;border-radius:999px;
-      padding:6px 10px;font-size:12px;font-weight:800;
+      padding:6px 10px;font-size:12px;font-weight:900;
       letter-spacing:.3px;border:1px solid rgba(255,255,255,.12);
       margin-left:8px;
+      white-space:nowrap;
     }
     .tag.positive{background:rgba(31,143,82,.2);color:#bff2d5}
     .tag.negative{background:rgba(198,40,40,.2);color:#ffd4d4}
@@ -116,54 +142,139 @@
       animation:spin .9s linear infinite;
     }
     @keyframes spin{to{transform:rotate(360deg)}}
+
+    label{
+      display:block;
+      font-size:12px;
+      color: var(--muted);
+      margin: 0 0 6px;
+      letter-spacing:.3px;
+      text-transform: uppercase;
+    }
+    input[type="text"], input[type="password"]{
+      width:100%;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid var(--border);
+      background: var(--inputBg);
+      color: var(--text);
+      outline: none;
+      font-size: 14px;
+    }
+    input::placeholder{color: rgba(168,179,214,.75)}
+    .small{
+      margin-top:8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .checks{
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+      align-items:center;
+      margin-top:10px;
+    }
+    .checks label{
+      margin:0;
+      text-transform:none;
+      letter-spacing:0;
+      font-size:13px;
+      color: var(--text);
+      display:flex;
+      gap:8px;
+      align-items:center;
+      cursor:pointer;
+    }
+    .checks input{transform: translateY(1px);}
     code{color:#cfe0ff}
-    .hint{margin-top:12px;color:var(--muted);font-size:12px;line-height:1.45}
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Random Review Sentiment Analyzer</h1>
     <p class="subtitle">
-      Loads <code>reviews_test.tsv</code>, picks a random review, and runs sentiment locally in your browser using Transformers.js.
+      Static client-side app: loads <code>reviews_test.tsv</code>, picks a random review, runs Transformers.js sentiment locally, and logs runs to Google Sheets (HW 2).
     </p>
 
-    <div class="card">
-      <div class="row">
-        <button id="analyzeBtn" disabled>Analyze random review</button>
+    <div class="grid">
+      <div class="card">
+        <div class="row">
+          <div class="row-left">
+            <button id="analyzeBtn" disabled>Analyze random review</button>
 
-        <div class="pill" title="Loaded reviews count">
-          <i class="fa-solid fa-database"></i>
-          <span id="countsText">Reviews: 0</span>
-        </div>
+            <div class="pill" title="Loaded reviews count">
+              <i class="fa-solid fa-database"></i>
+              <span id="countsText">Reviews: 0</span>
+            </div>
 
-        <div class="loading" id="loadingRow" aria-live="polite">
-          <span class="spinner" aria-hidden="true"></span>
-          <span id="loadingText">Loading…</span>
-        </div>
-      </div>
-
-      <div class="status" id="statusText" aria-live="polite"></div>
-      <div class="error" id="errorBox" role="alert"></div>
-
-      <div class="section-title">Selected review</div>
-      <div class="review-box" id="reviewBox">Waiting for TSV + model…</div>
-
-      <div class="section-title">Result</div>
-      <div class="result" id="resultBox">
-        <div class="icon" id="resultIcon" aria-hidden="true">
-          <i class="fa-regular fa-circle-question"></i>
-        </div>
-        <div>
-          <div class="label">
-            <span id="resultLabel">—</span>
-            <span class="tag neutral" id="bucketTag">NEUTRAL</span>
+            <div class="loading" id="loadingRow" aria-live="polite">
+              <span class="spinner" aria-hidden="true"></span>
+              <span id="loadingText">Loading…</span>
+            </div>
           </div>
-          <div class="meta" id="resultMeta">No analysis yet.</div>
+
+          <div class="pill" title="Logging status">
+            <i class="fa-solid fa-sheet-plastic"></i>
+            <span id="logStatusText">Logging: off</span>
+          </div>
+        </div>
+
+        <div class="status" id="statusText" aria-live="polite"></div>
+        <div class="error" id="errorBox" role="alert"></div>
+
+        <div class="section-title">Selected review</div>
+        <div class="review-box" id="reviewBox">Waiting for TSV + model…</div>
+
+        <div class="section-title">Result</div>
+        <div class="result" id="resultBox">
+          <div class="icon" id="resultIcon" aria-hidden="true">
+            <i class="fa-regular fa-circle-question"></i>
+          </div>
+          <div>
+            <div class="label">
+              <span id="resultLabel">—</span>
+              <span class="tag neutral" id="bucketTag">NEUTRAL</span>
+            </div>
+            <div class="meta" id="resultMeta">No analysis yet.</div>
+          </div>
         </div>
       </div>
 
-      <div class="hint">
-        Logging: set your Apps Script Web App URL in <code>app.js</code> (GOOGLE_APPS_SCRIPT_URL). TSV must have a column named <code>text</code>.
+      <div class="card">
+        <div class="panel">
+          <div class="section-title" style="margin-top:0;">Settings</div>
+
+          <div style="margin-bottom:12px;">
+            <label for="appsScriptUrlInput">Google Apps Script Web App URL (for HW 2 logs)</label>
+            <input id="appsScriptUrlInput" type="text" placeholder="https://script.google.com/macros/s/.../exec" />
+            <div class="small">
+              Must be the deployed Web App URL (ends with <code>/exec</code>). Logs will be saved to the sheet named <code>logs</code>.
+            </div>
+          </div>
+
+          <div style="margin-bottom:12px;">
+            <label for="hfTokenInput">Hugging Face Token (optional)</label>
+            <input id="hfTokenInput" type="password" placeholder="hf_..." />
+            <div class="small">
+              Optional. Only needed for private model access. Stored in <code>localStorage</code> in your browser.
+            </div>
+          </div>
+
+          <div class="checks">
+            <label><input type="checkbox" id="enableLoggingChk" /> Enable Google Sheets logging</label>
+          </div>
+
+          <div class="row" style="margin-top:14px;margin-bottom:0;justify-content:flex-start;">
+            <button id="saveSettingsBtn" type="button">Save settings</button>
+            <button id="reloadModelBtn" type="button" style="background:#3b4966;">Reload model</button>
+          </div>
+
+          <div class="small" style="margin-top:12px;">
+            TSV requirements: file <code>reviews_test.tsv</code> must be next to <code>index.html</code> and contain a column named <code>text</code>.
+          </div>
+        </div>
       </div>
     </div>
   </div>
