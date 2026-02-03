@@ -1,32 +1,37 @@
 import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6/dist/transformers.min.js";
 
 /**
- * Fully client-side sentiment demo:
- * - fetch reviews_test.tsv
- * - parse with PapaParse (TSV)
- * - pick random review
- * - run Transformers.js pipeline in-browser
- * - render label/score/icon
- * - log every run to Google Sheets via Apps Script Web App doPost receiver
+ * Requirements implemented:
+ * - Static client-side app with 2 files: index.html + app.js
+ * - fetch("reviews_test.tsv") + Papa Parse (header:true, delimiter:"\t")
+ * - Transformers.js pipeline("text-classification", Xenova/...sst-2...) in browser
+ * - Analyze random review, show label+confidence+icon, loading+error states
+ * - UI settings: enter HF token and Apps Script URL through interface
+ * - Log every model run to Google Sheets (HW 2) in the exact Apps Script format:
+ *   ts, Review, Sentiment, Meta  (x-www-form-urlencoded; goes into e.parameter)
  */
 
 // ==============================
-// Config
+// Config (static inputs)
 // ==============================
 const TSV_PATH = "reviews_test.tsv";
 const TEXT_COLUMN = "text";
 const MODEL_ID = "Xenova/distilbert-base-uncased-finetuned-sst-2-english";
 
-// Paste your deployed Apps Script Web App URL here (must end with /exec)
-const GOOGLE_APPS_SCRIPT_URL = "PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE";
+// localStorage keys
+const LS_KEYS = {
+  appsScriptUrl: "hw2_appsScriptUrl",
+  hfToken: "hw2_hfToken",
+  enableLogging: "hw2_enableLogging",
+};
 
 // ==============================
-// State (minimal)
+// State
 // ==============================
 let reviews = [];
 let sentimentPipe = null;
 
-// DOM cache
+// Cached DOM
 const el = {};
 
 // ==============================
@@ -40,7 +45,6 @@ function requireElements(ids) {
   const missing = ids.filter((id) => !$(id));
   if (missing.length) {
     console.error("Missing required DOM elements:", missing);
-    // If even the error box is missing, fallback to alert
     alert("Missing required elements in index.html: " + missing.join(", "));
     throw new Error("Missing DOM elements: " + missing.join(", "));
   }
@@ -63,12 +67,64 @@ function clearError() {
 function setLoading(on, msg) {
   el.loadingRow.style.display = on ? "inline-flex" : "none";
   el.loadingText.textContent = msg || (on ? "Loading…" : "");
-  // disable analyze button while loading OR if prerequisites not ready
   el.analyzeBtn.disabled = on || !sentimentPipe || reviews.length === 0;
 }
 
 function setCounts(n) {
   el.countsText.textContent = `Reviews: ${n}`;
+}
+
+function setLogStatus(text) {
+  el.logStatusText.textContent = text;
+}
+
+// ==============================
+// Settings (UI <-> localStorage)
+// ==============================
+function loadSettingsFromStorage() {
+  const appsScriptUrl = localStorage.getItem(LS_KEYS.appsScriptUrl) || "";
+  const hfToken = localStorage.getItem(LS_KEYS.hfToken) || "";
+  const enableLoggingRaw = localStorage.getItem(LS_KEYS.enableLogging);
+  const enableLogging = enableLoggingRaw === "true";
+
+  el.appsScriptUrlInput.value = appsScriptUrl;
+  el.hfTokenInput.value = hfToken;
+  el.enableLoggingChk.checked = enableLogging;
+
+  updateLogStatusUI();
+}
+
+function saveSettingsToStorage() {
+  const appsScriptUrl = (el.appsScriptUrlInput.value || "").trim();
+  const hfToken = (el.hfTokenInput.value || "").trim();
+  const enableLogging = !!el.enableLoggingChk.checked;
+
+  localStorage.setItem(LS_KEYS.appsScriptUrl, appsScriptUrl);
+  localStorage.setItem(LS_KEYS.hfToken, hfToken);
+  localStorage.setItem(LS_KEYS.enableLogging, String(enableLogging));
+
+  updateLogStatusUI();
+}
+
+function getSettings() {
+  return {
+    appsScriptUrl: (localStorage.getItem(LS_KEYS.appsScriptUrl) || "").trim(),
+    hfToken: (localStorage.getItem(LS_KEYS.hfToken) || "").trim(),
+    enableLogging: localStorage.getItem(LS_KEYS.enableLogging) === "true",
+  };
+}
+
+function updateLogStatusUI() {
+  const { appsScriptUrl, enableLogging } = getSettings();
+  if (!enableLogging) {
+    setLogStatus("Logging: off");
+    return;
+  }
+  if (!appsScriptUrl) {
+    setLogStatus("Logging: on (missing URL)");
+    return;
+  }
+  setLogStatus("Logging: on");
 }
 
 // ==============================
@@ -144,19 +200,51 @@ function extractTexts(rows, colName) {
 // Model init (Transformers.js)
 // ==============================
 async function initModel() {
+  clearError();
   setStatus("Loading sentiment model… (first time can take a while)");
+  setLoading(true, "Loading model…");
+
+  const { hfToken } = getSettings();
+
   try {
-    sentimentPipe = await pipeline("text-classification", MODEL_ID);
+    // Try with token if provided (for private repos). If unsupported by library, may throw.
+    if (hfToken) {
+      sentimentPipe = await pipeline("text-classification", MODEL_ID, { token: hfToken });
+    } else {
+      sentimentPipe = await pipeline("text-classification", MODEL_ID);
+    }
+
     setStatus("Sentiment model ready.");
   } catch (err) {
     console.error("Model load error:", err);
-    sentimentPipe = null;
-    setStatus("Model failed to load.");
-    showError(
-      "Failed to load Transformers.js sentiment model.\n" +
-      "Check your network / blockers and open Console for details.\n\n" +
-      `Details: ${err.message || String(err)}`
-    );
+
+    // Fallback: if token attempt failed, retry without token (useful if token option is unsupported)
+    if (hfToken) {
+      try {
+        console.warn("Retrying model load without token…");
+        sentimentPipe = await pipeline("text-classification", MODEL_ID);
+        setStatus("Sentiment model ready. (Loaded without token)");
+      } catch (err2) {
+        console.error("Model load error (retry):", err2);
+        sentimentPipe = null;
+        setStatus("Model failed to load.");
+        showError(
+          "Failed to load Transformers.js sentiment model.\n" +
+          "If you use a token, ensure it is correct and that the model is accessible.\n\n" +
+          `Details: ${err2.message || String(err2)}`
+        );
+      }
+    } else {
+      sentimentPipe = null;
+      setStatus("Model failed to load.");
+      showError(
+        "Failed to load Transformers.js sentiment model.\n" +
+        "Check your network / blockers and open Console for details.\n\n" +
+        `Details: ${err.message || String(err)}`
+      );
+    }
+  } finally {
+    setLoading(false, "");
   }
 }
 
@@ -208,7 +296,7 @@ function renderResult(label, score, bucket) {
 
   el.resultMeta.textContent = `Model: ${MODEL_ID}`;
 
-  // icon
+  // icon mapping
   el.resultIcon.innerHTML = "";
   const i = document.createElement("i");
   if (bucket === "positive") i.className = "fa-solid fa-thumbs-up";
@@ -225,7 +313,7 @@ async function analyzeOnce() {
     return;
   }
   if (!sentimentPipe) {
-    showError("Model not ready. Wait for 'Sentiment model ready.'");
+    showError("Model not ready. Click “Reload model” or wait for 'Sentiment model ready.'");
     return;
   }
 
@@ -240,6 +328,7 @@ async function analyzeOnce() {
 
     renderResult(label, score, bucket);
 
+    // Log every successful run in the exact expected format
     await logRunToGoogleSheet({
       review,
       sentiment: `${label} (${percent(score).toFixed(1)}%)`,
@@ -253,7 +342,7 @@ async function analyzeOnce() {
       `Details: ${err.message || String(err)}`
     );
 
-    // Still log attempts
+    // Still log attempts (counts as a run attempt)
     try {
       await logRunToGoogleSheet({
         review,
@@ -270,6 +359,8 @@ async function analyzeOnce() {
 
 // ==============================
 // Google Sheets logging (Apps Script doPost receiver)
+// EXACT FORMAT required by your script:
+// { ts, Review, Sentiment, Meta } as x-www-form-urlencoded
 // ==============================
 function buildMeta(extra = {}) {
   const meta = {
@@ -287,21 +378,25 @@ function buildMeta(extra = {}) {
 }
 
 async function logRunToGoogleSheet({ review, sentiment, meta }) {
-  if (!GOOGLE_APPS_SCRIPT_URL || GOOGLE_APPS_SCRIPT_URL.includes("PASTE_YOUR_APPS_SCRIPT_WEB_APP_URL_HERE")) {
-    console.warn("GOOGLE_APPS_SCRIPT_URL not set, skipping Google Sheets logging.");
+  const { appsScriptUrl, enableLogging } = getSettings();
+  updateLogStatusUI();
+
+  if (!enableLogging) return;
+  if (!appsScriptUrl) {
+    console.warn("Logging enabled but Apps Script URL is missing.");
     return;
   }
 
-  // Apps Script receiver accepts x-www-form-urlencoded via e.parameter
+  // Your Apps Script expects e.parameter keys: ts, Review, Sentiment, Meta
   const body = new URLSearchParams();
   body.set("ts", String(Date.now()));
   body.set("Review", review || "");
   body.set("Sentiment", sentiment || "");
   body.set("Meta", meta || "");
 
-  // Use no-cors so the browser doesn't block the request if Apps Script doesn't send CORS headers.
-  // We cannot read the response in no-cors mode, but the append should still work.
-  await fetch(GOOGLE_APPS_SCRIPT_URL, {
+  // no-cors prevents browser from blocking if Apps Script doesn't set CORS headers.
+  // You won't be able to read the response, but the row should append.
+  await fetch(appsScriptUrl, {
     method: "POST",
     mode: "no-cors",
     headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
@@ -313,7 +408,6 @@ async function logRunToGoogleSheet({ review, sentiment, meta }) {
 // Bootstrap
 // ==============================
 document.addEventListener("DOMContentLoaded", async () => {
-  // Ensure required elements exist (prevents null.addEventListener crashes)
   requireElements([
     "analyzeBtn",
     "countsText",
@@ -326,9 +420,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     "resultLabel",
     "resultMeta",
     "bucketTag",
+    "appsScriptUrlInput",
+    "hfTokenInput",
+    "enableLoggingChk",
+    "saveSettingsBtn",
+    "reloadModelBtn",
+    "logStatusText",
   ]);
 
-  // Cache DOM references
+  // Cache DOM
   el.analyzeBtn = $("analyzeBtn");
   el.countsText = $("countsText");
   el.loadingRow = $("loadingRow");
@@ -341,13 +441,42 @@ document.addEventListener("DOMContentLoaded", async () => {
   el.resultMeta = $("resultMeta");
   el.bucketTag = $("bucketTag");
 
+  el.appsScriptUrlInput = $("appsScriptUrlInput");
+  el.hfTokenInput = $("hfTokenInput");
+  el.enableLoggingChk = $("enableLoggingChk");
+  el.saveSettingsBtn = $("saveSettingsBtn");
+  el.reloadModelBtn = $("reloadModelBtn");
+  el.logStatusText = $("logStatusText");
+
   // Initial UI
   setCounts(0);
   clearError();
   setLoading(true, "Initializing…");
   setStatus("App initialized.");
 
-  // Bind click handler safely (now guaranteed element exists)
+  // Load saved settings into UI
+  loadSettingsFromStorage();
+
+  // Bind events
+  el.saveSettingsBtn.addEventListener("click", () => {
+    clearError();
+    saveSettingsToStorage();
+    setStatus("Settings saved.");
+  });
+
+  el.reloadModelBtn.addEventListener("click", async () => {
+    await initModel();
+    el.analyzeBtn.disabled = !sentimentPipe || reviews.length === 0;
+    if (sentimentPipe && reviews.length) {
+      setStatus(`Ready. Loaded ${reviews.length} reviews. Click “Analyze random review”.`);
+    }
+  });
+
+  el.enableLoggingChk.addEventListener("change", () => {
+    saveSettingsToStorage();
+    updateLogStatusUI();
+  });
+
   el.analyzeBtn.addEventListener("click", () => {
     analyzeOnce().catch((err) => {
       console.error("Unexpected analyzeOnce error:", err);
@@ -356,14 +485,19 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
 
-  // Load TSV and model
+  // Load TSV then model
   await loadReviews();
   await initModel();
 
   // Final state
   setLoading(false, "");
   el.analyzeBtn.disabled = !sentimentPipe || reviews.length === 0;
+
   if (sentimentPipe && reviews.length) {
     setStatus(`Ready. Loaded ${reviews.length} reviews. Click “Analyze random review”.`);
+  } else if (reviews.length && !sentimentPipe) {
+    setStatus("TSV loaded, but model not ready. Check settings and click “Reload model”.");
   }
+
+  updateLogStatusUI();
 });
