@@ -327,6 +327,9 @@ async function logToGoogleSheet({ review, sentimentText, meta }) {
 // ==============================
 // Startup
 // ==============================
+
+
+
 document.addEventListener("DOMContentLoaded", async () => {
   // Cache elements
   el.analyzeBtn = qs("analyzeBtn");
@@ -355,6 +358,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   el.analyzeBtn.disabled = !sentimentPipeline || reviews.length === 0;
 
   // Wire interactions
+  const btn = document.getElementById("analyzeBtn");
+  if (!btn) {
+    console.error('Button with id="analyzeBtn" not found in index.html');
+    // optionally show UI message if you have an error box
+  } else {
+    btn.addEventListener("click", analyzeRandomReview);
+  }
+  
+  
   el.analyzeBtn.addEventListener("click", () => {
     analyzeRandomReview().catch((err) => {
       console.error("Unexpected analyze handler error:", err);
