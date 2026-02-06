@@ -1,4 +1,7 @@
 # Big_data_NIS_2026
+HW: https://kzinovyeva.github.io/Big_data_NIS_2026/l1/
+macros: https://script.google.com/macros/s/AKfycbw0u9u_BUtJJCtQaY8B13SkNLuIXxQcLi21uX_XeOKvXS7fi0FY5VNl0-HKdNw6w_30/exec
+
 1. A **fully static, client-side** web app (no backend) was created so it can be hosted on **GitHub Pages**.
 
 2. The project was structured to contain **exactly two files**:
