@@ -238,18 +238,30 @@ To this, you need to add the following
  */
 ` 
 function doPost(e) {
+
   var p = e && e.parameter ? e.parameter : {};
+  
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  
   var sh = ss.getSheetByName('logs') || ss.insertSheet('logs');
+  
   if (sh.getLastRow() === 0) {
     sh.appendRow(['Timestamp (ts_iso)','Review','Sentiment (with confidence)','Meta (all client info)']);
   }
+  
   var ts = p.ts ? new Date(Number(p.ts)) : new Date();
+  
   sh.appendRow([
+  
     ts.toISOString(),
+    
     p.Review || '',
+    
     p.Sentiment || '',
+    
     p.Meta || ''
+    
   ]);
+  
   return ContentService.createTextOutput('OK');
 } `
