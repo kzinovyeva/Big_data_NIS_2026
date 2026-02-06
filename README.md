@@ -228,12 +228,15 @@ Do not include any extra explanation or commentary outside these two code blocks
 To this, you need to add the following
  I need all the launches of the model to be collected in a Google Excel spreadsheet using macros, where the app script is already activated.
  The macros:
+ 
 /**
  * Minimal Web App receiver for MVP logging.
  * Expects JSON: { event: "cta_click", variant: "B", userId: "...", ts: 1699999999999 }
  * Returns JSON { ok: true } on success.
  * Accepts x-www-form-urlencoded from e.parameter and appends to Sheet.
+
  */
+ 
 function doPost(e) {
   var p = e && e.parameter ? e.parameter : {};
   var ss = SpreadsheetApp.getActiveSpreadsheet();
